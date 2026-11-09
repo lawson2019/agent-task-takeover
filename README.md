@@ -1,5 +1,9 @@
 # agent-task-takeover
 
+[![npm](https://img.shields.io/npm/v/agent-task-takeover)](https://www.npmjs.com/package/agent-task-takeover)
+[![ClawHub](https://img.shields.io/badge/clawhub-agent--task--takeover-blue)](https://clawhub.ai)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 **Take over, understand, or hand off another AI coding agent's task — across CLI and Electron agents, with no dependency on any terminal multiplexer.**
 
 Every AI coding agent keeps its conversations on disk as local files (SQLite DBs, JSONL rollouts, JSON chat sessions). That means any agent with filesystem access can read another agent's session, reconstruct the task state, and continue the work — or package its own task so a different agent can pick it up. This project is a battle-tested procedure plus a set of read-only, stdlib-only Python tools for doing exactly that, safely.
@@ -28,20 +32,29 @@ Details and per-agent schemas: [references/agent-stores.md](references/agent-sto
 
 ## Install
 
-Two ways to use it:
+Three ways to get it:
 
-**As an agent skill** (recommended) — the agent loads `SKILL.md` and follows the procedure:
+**npm** (installs the skill into `~/.agents/skills/agent-task-takeover`):
 
 ```bash
-# opencode / any agent that reads ~/.agents/skills
-git clone <this-repo> ~/.agents/skills/agent-task-takeover
+npx agent-task-takeover        # or: npm i -g agent-task-takeover && agent-task-takeover
 ```
 
-**As standalone scripts** — everything is Python 3.8+, standard library only, no install step:
+**ClawHub** (OpenClaw skill registry):
 
 ```bash
-git clone <this-repo>
-cd agent-task-takeover
+clawhub install @lawson2019/agent-task-takeover
+```
+
+**Git** — any agent that scans `~/.agents/skills` picks it up:
+
+```bash
+git clone https://github.com/lawson2019/agent-task-takeover ~/.agents/skills/agent-task-takeover
+```
+
+The bundled tools are also usable standalone — Python 3.8+, standard library only:
+
+```bash
 python scripts/discover_stores.py
 ```
 

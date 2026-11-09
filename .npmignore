@@ -1,0 +1,5 @@
+**/__pycache__/
+*.pyc
+.evolver-backups/
+.evolver-staging/
+.git/
