@@ -1,0 +1,6 @@
+# skill-evolver working dirs (local only, never publish)
+.evolver-backups/
+.evolver-staging/
+
+__pycache__/
+*.pyc
