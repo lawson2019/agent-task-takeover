@@ -95,6 +95,7 @@ Then follow the takeover procedure in [SKILL.md](SKILL.md): reconstruct the task
 
 ```bash
 python -B -m unittest discover -s tests -v   # stdlib regression tests; synthetic fixtures only, no real agent store required
+python scripts/state_model.py --self-check   # smoke-test the decision helpers on any machine
 ```
 
 Project layout:

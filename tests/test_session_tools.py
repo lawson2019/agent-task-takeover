@@ -524,6 +524,57 @@ class ArtifactDiscoveryTests(unittest.TestCase):
             self.assertIn(item["kind"], ("cli", "electron"))
             self.assertNotIn("pipeline", item)
 
+    def test_missing_artifact_root_is_reported_not_silent(self):
+        missing = self.dir / "nope"
+        result = run_script(
+            "discover_stores.py", "--artifacts",
+            "--artifact-root", missing, "--json",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        parsed = json.loads(result.stdout)
+        self.assertEqual(len(parsed), 1)
+        self.assertIs(parsed[0]["exists"], False)
+        self.assertEqual(parsed[0]["pipeline"], UNKNOWN)
+
+    def test_evidence_glob_is_configurable(self):
+        (self.dir / "tags.json").write_text("{}", encoding="utf-8")
+        os.utime(self.dir / "tags.json", (400, 400))
+        result = run_script(
+            "discover_stores.py", "--artifacts",
+            "--artifact-root", self.dir,
+            "--evidence-glob", "tags.json", "--json",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        parsed = json.loads(result.stdout)
+        self.assertEqual(parsed[0]["evidence_mtime"], 400.0)
+
+    def test_gate_failed_forces_stale_even_with_newer_deliverable(self):
+        (self.dir / "src.txt").write_text("s", encoding="utf-8")
+        (self.dir / "out.bin").write_text("d", encoding="utf-8")
+        os.utime(self.dir / "src.txt", (100, 100))
+        os.utime(self.dir / "out.bin", (200, 200))
+        result = run_script(
+            "discover_stores.py", "--artifacts",
+            "--artifact-root", self.dir,
+            "--source-glob", "src.txt",
+            "--deliverable-glob", "out.bin",
+            "--gate-failed", "--json",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)[0]["pipeline"], STALE)
+
+
+class StateModelSelfCheckTests(unittest.TestCase):
+    def test_self_check_passes(self):
+        result = run_script("state_model.py", "--self-check")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("checks passed", result.stdout)
+
+    def test_plain_invocation_is_usage_not_crash(self):
+        result = run_script("state_model.py")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("library", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

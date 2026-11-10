@@ -1,0 +1,15 @@
+{
+  "name": "agent-task-takeover",
+  "owner": {
+    "name": "lawson2019"
+  },
+  "plugins": [
+    {
+      "name": "agent-task-takeover",
+      "description": "Cross-agent task takeover & handoff: read another AI coding agent's session (opencode, ZCode, Codex, Claude Code, Gemini CLI, Cursor, Trae, VS Code Copilot...), reconstruct its task state, verify on disk, and continue the work.",
+      "source": ".",
+      "strict": false,
+      "skills": ["."]
+    }
+  ]
+}

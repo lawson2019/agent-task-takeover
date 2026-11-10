@@ -12,8 +12,10 @@ Usage:
   python discover_stores.py --json     # machine-readable
   python discover_stores.py --days 14  # only stores touched in the last N days
   python discover_stores.py --artifacts --artifact-root PATH [--json]
-      --artifact-root / --source-glob / --deliverable-glob are repeatable;
-      roots may also come from AGENT_TAKEOVER_ARTIFACT_ROOTS (pathsep-separated)
+      --artifact-root / --source-glob / --deliverable-glob / --evidence-glob
+      are repeatable; roots may also come from
+      AGENT_TAKEOVER_ARTIFACT_ROOTS (pathsep-separated)
+      --gate-failed marks the pipeline stale despite a newer deliverable
 """
 import argparse
 import glob
@@ -147,20 +149,37 @@ def _newest(root, globs):
 
 
 def scan_artifacts(roots, source_globs=(), deliverable_globs=(),
-                   evidence_globs=EVIDENCE_GLOBS):
-    """Collect freshness evidence and detect a stale export pipeline."""
+                   evidence_globs=EVIDENCE_GLOBS, gate_ok=None):
+    """Collect freshness evidence and detect a stale export pipeline.
+
+    A root that does not exist is reported with exists=False instead of
+    silently producing an all-None row that looks like "nothing to see".
+    """
     results = []
     for root in roots:
         root = Path(root)
+        exists = root.is_dir()
+        if not exists:
+            results.append({
+                "root": str(root),
+                "exists": False,
+                "source_mtime": None,
+                "deliverable_mtime": None,
+                "evidence_mtime": None,
+                "pipeline": UNKNOWN,
+            })
+            continue
         src = _newest(root, source_globs) if source_globs else None
         deliv = _newest(root, deliverable_globs) if deliverable_globs else None
         evidence = _newest(root, evidence_globs)
         results.append({
             "root": str(root),
+            "exists": True,
             "source_mtime": src,
             "deliverable_mtime": deliv,
             "evidence_mtime": evidence,
-            "pipeline": classify_pipeline(src, deliv) if (src or deliv) else UNKNOWN,
+            "pipeline": classify_pipeline(src, deliv, gate_ok)
+            if (src or deliv) else UNKNOWN,
         })
     return results
 
@@ -184,6 +203,12 @@ def main():
                         help="glob for source artifacts (repeatable)")
     parser.add_argument("--deliverable-glob", action="append", default=[],
                         help="glob for exported deliverables (repeatable)")
+    parser.add_argument("--evidence-glob", action="append", default=[],
+                        help="glob for logs/reports used as evidence "
+                             "(repeatable; defaults to common log and report names)")
+    parser.add_argument("--gate-failed", action="store_true",
+                        help="treat a failed validation gate as stale even when "
+                             "the deliverable is newer than the source")
     args = parser.parse_args()
     ensure_utf8_stdout()
 
@@ -192,11 +217,18 @@ def main():
             artifact_roots(args.artifact_root),
             args.source_glob,
             args.deliverable_glob,
+            evidence_globs=tuple(args.evidence_glob) or EVIDENCE_GLOBS,
+            gate_ok=False if args.gate_failed else None,
         )
         if args.json:
             print(json.dumps(results, ensure_ascii=False, indent=2))
             return
         for item in results:
+            if not item["exists"]:
+                print(item["root"])
+                print("    not found (check the path, or set "
+                      f"{ARTIFACT_ENV})")
+                continue
             print(item["root"])
             print("    pipeline: {p} | source: {s} | deliverable: {d} | evidence: {e}".format(
                 p=item["pipeline"], s=_fmt(item["source_mtime"]),

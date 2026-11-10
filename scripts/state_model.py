@@ -174,3 +174,52 @@ class TaskState:
             bullets(self.next_moves),
         ]
         return "\n".join(sections)
+
+
+def _self_check():
+    """Exercise every helper on synthetic inputs; exit 0 when all hold."""
+    checks = []
+    checks.append(classify_pipeline(200, 100) == STALE)
+    checks.append(classify_pipeline(100, 200) == CURRENT)
+    checks.append(classify_pipeline(100, 200, gate_ok=False) == STALE)
+    checks.append(classify_pipeline(None, 200) == UNKNOWN)
+    checks.append(reconstruct_needed(None, None, None) is True)
+    checks.append(reconstruct_needed("s1", 100, None) is False)
+    checks.append(reconstruct_needed("s1", 100, 100 + DEFAULT_FRESHNESS_WINDOW + 1) is True)
+    checks.append(needs_confirmation(100, None, 200, candidate_count=2) is True)
+    checks.append(needs_confirmation(100, None, 200, candidate_count=1) is False)
+    checks.append(liveness_signal(200, 100, None, now=250)[0] is True)
+    checks.append(liveness_signal(200, 100, None, now=250 + DEFAULT_ACTIVE_WINDOW + 1)[0] is False)
+    checks.append(verify_claims(
+        [{"path": "/x", "marker": "ok"}],
+        exists=lambda p: p == "/x",
+        contains=lambda p, m: True,
+    ) == [])
+    checks.append(verify_claims(
+        [{"path": "/x", "marker": "ok"}],
+        exists=lambda p: p == "/x",
+        contains=lambda p, m: False,
+    )[0]["reason"] == "marker-mismatch")
+    state = TaskState(objective="t", next_moves=["a"])
+    report = state.report()
+    checks.append(all(h in report for h in
+                      ("## Objective", "## Evidence", "## Timeline",
+                       "## Work State", "## Mismatches", "## Deliverables",
+                       "## Next Move")))
+    bad = [i for i, ok in enumerate(checks) if not ok]
+    if bad:
+        print("FAILED checks: " + ", ".join(str(i) for i in bad))
+        return 1
+    print("state_model self-check: {} checks passed".format(len(checks)))
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+
+    if len(sys.argv) > 1 and sys.argv[1] == "--self-check":
+        raise SystemExit(_self_check())
+    print(__doc__)
+    print("This module is a library for scripts and agents. Run "
+          "`python state_model.py --self-check` to verify it.")
+    raise SystemExit(0)
