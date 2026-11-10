@@ -19,6 +19,10 @@ SCRIPTS = ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from session_utils import blocks_text, redact_text  # noqa: E402
+from state_model import (  # noqa: E402
+    CURRENT, STALE, UNKNOWN, TaskState, classify_pipeline,
+    liveness_signal, needs_confirmation, reconstruct_needed, verify_claims,
+)
 
 
 def run_script(name, *args):
@@ -419,6 +423,106 @@ class DiscoverStoresTests(unittest.TestCase):
             self.assertIn("agent", item)
             self.assertIn("kind", item)
             self.assertIn(item["kind"], ("cli", "electron"))
+
+
+class StateModelTests(unittest.TestCase):
+    """Synthetic fixtures only: no real store, path, tool or platform needed."""
+
+    NOW = 1_000_000
+
+    def test_missing_or_stale_transcript_requires_artifact_reconstruction(self):
+        self.assertTrue(reconstruct_needed(None, None, self.NOW))
+        self.assertTrue(reconstruct_needed("session-1", None, self.NOW))
+        self.assertTrue(reconstruct_needed("session-1", self.NOW - 10 * 86400, self.NOW))
+        self.assertFalse(reconstruct_needed("session-1", self.NOW - 10, self.NOW))
+
+    def test_handoff_claims_are_verified_against_filesystem(self):
+        present = {"a.txt": "final", "b.txt": "draft"}
+        claims = [
+            {"path": "a.txt", "marker": "final"},
+            "missing.txt",
+            {"path": "b.txt", "marker": "final"},
+        ]
+        conflicts = verify_claims(
+            claims,
+            lambda path: path in present,
+            lambda path, marker: marker in present[path],
+        )
+        self.assertEqual([c["reason"] for c in conflicts], ["missing", "marker-mismatch"])
+
+    def test_shared_store_write_is_not_task_liveness(self):
+        active, basis = liveness_signal(
+            store_mtime=self.NOW, session_mtime=self.NOW - 7200,
+            artifact_mtime=self.NOW - 3600, now=self.NOW,
+        )
+        self.assertFalse(active)
+        self.assertEqual(basis, "artifacts")
+        active, _ = liveness_signal(
+            store_mtime=self.NOW, session_mtime=None,
+            artifact_mtime=self.NOW - 10, now=self.NOW,
+        )
+        self.assertTrue(active)
+
+    def test_source_newer_than_deliverable_marks_export_stale(self):
+        self.assertEqual(classify_pipeline(200, 100), STALE)
+        self.assertEqual(classify_pipeline(100, 200), CURRENT)
+        self.assertEqual(classify_pipeline(100, 200, gate_ok=False), STALE)
+        self.assertEqual(classify_pipeline(None, 200), UNKNOWN)
+
+    def test_stale_session_and_multiple_candidates_need_confirmation(self):
+        self.assertTrue(needs_confirmation(self.NOW - 10 * 86400, None, self.NOW))
+        self.assertTrue(needs_confirmation(self.NOW - 10, self.NOW, self.NOW,
+                                           candidate_count=2))
+        self.assertFalse(needs_confirmation(self.NOW - 10, self.NOW, self.NOW))
+
+    def test_report_has_fixed_sections_and_final_pointer(self):
+        state = TaskState(objective="demo", pipeline=STALE, final_pointer="out.bin")
+        state.next_moves.append("re-export")
+        text = state.report()
+        for section in ("## Objective", "## Evidence", "## Timeline", "## Work State",
+                        "## Mismatches", "## Deliverables", "## Next Move"):
+            self.assertIn(section, text)
+        self.assertIn("out.bin", text)
+        self.assertIn("re-export", text)
+
+
+class ArtifactDiscoveryTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.temp.name)
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def test_artifact_mode_is_configurable_and_detects_stale_pipeline(self):
+        (self.dir / "src.txt").write_text("source", encoding="utf-8")
+        (self.dir / "out.bin").write_text("deliverable", encoding="utf-8")
+        (self.dir / "build.log").write_text("log", encoding="utf-8")
+        os.utime(self.dir / "src.txt", (200, 200))
+        os.utime(self.dir / "out.bin", (100, 100))
+        os.utime(self.dir / "build.log", (300, 300))
+
+        result = run_script(
+            "discover_stores.py", "--artifacts",
+            "--artifact-root", self.dir,
+            "--source-glob", "src.txt",
+            "--deliverable-glob", "out.bin", "--json",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        parsed = json.loads(result.stdout)
+        self.assertEqual(len(parsed), 1)
+        self.assertEqual(parsed[0]["pipeline"], STALE)
+        self.assertEqual(parsed[0]["source_mtime"], 200.0)
+        self.assertEqual(parsed[0]["evidence_mtime"], 300.0)
+
+    def test_default_output_is_unchanged_by_opt_in_mode(self):
+        result = run_script("discover_stores.py", "--json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        parsed = json.loads(result.stdout)
+        self.assertIsInstance(parsed, list)
+        for item in parsed:
+            self.assertIn(item["kind"], ("cli", "electron"))
+            self.assertNotIn("pipeline", item)
 
 
 if __name__ == "__main__":

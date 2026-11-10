@@ -102,3 +102,71 @@ Cursor, Trae, VS Code, Kiro, Windsurf and Antigravity are all VS Code forks and 
 2. Document the exact path pattern, record shape, and one verified example row in this file (redact sample content).
 3. If the shape is JSONL or single-JSON, extend `scripts/dump_jsonl_session.py`; if it is SQLite, extend `dump_opencode_session.py` or `dump_vscdb_chat.py`; otherwise add a focused reader under `scripts/`.
 4. Add a regression test with synthetic data in `tests/test_session_tools.py`.
+
+---
+
+## Artifact sources (when transcripts are missing or stale)
+
+A session store is not the only source of task state. A session may never be
+persisted (context compaction, multiple installed versions, a custom data
+directory, or store cleanup), and a persisted compaction summary can disagree
+with the files it names. When no usable transcript exists, reconstruct state
+from read-only artifacts in this priority order:
+
+1. **Build / export / workflow logs** — the only evidence that records the last
+   executed command and whether it succeeded.
+2. **Agent scratch scripts and intermediate data** in a temporary or
+   project-local working directory — often the clearest record of a recent
+   decision or reversal.
+3. **Validation, quality-gate and postflight reports** — show whether the last
+   source change passed before export.
+4. **Source artifacts and deliverables** — compare the newest source mtime with
+   the newest deliverable mtime and a content fingerprint. A newer source means
+   the export step never ran; this is the most common incomplete-pipeline state.
+5. **Backup / snapshot directories** — recover a previous state without
+   touching live build inputs.
+
+Rules that hold for every agent and platform:
+
+- Configure candidate roots and globs explicitly (CLI options or an environment
+  variable), rather than hard-coding a product's directory name into the
+  discovery logic. Default to the current directory; never inventory an
+  unrelated home directory.
+- Collect evidence with read-only stat / fingerprint operations. Do not parse
+  file bodies during discovery, and apply the existing redaction rules to
+  anything later quoted into a report.
+- Produce a last-action timeline plus the unfinished pipeline step, instead of
+  guessing from a stale session title.
+- Treat a store's mtime as **store-level only**. Several sessions commonly share
+  one store; a recent write does not prove the target task is active. Judge
+  liveness from the newest task artifact and from live writer processes or file
+  locks.
+
+### Configuring discovery
+
+`discover_stores.py --artifacts` is opt-in and backward compatible: without it,
+the default store table and `--json` shape are unchanged. Supply roots with
+repeatable `--artifact-root` (or `AGENT_TAKEOVER_ARTIFACT_ROOTS`, separated by
+the platform path separator), and optionally classify sources and deliverables
+with repeatable `--source-glob` / `--deliverable-glob`. The script only stats
+files. `scripts/state_model.py` holds the agent-neutral decision helpers
+(`classify_pipeline`, `reconstruct_needed`, `needs_confirmation`,
+`liveness_signal`, `verify_claims`, `TaskState`), and
+`tests/test_session_tools.py` covers them with synthetic fixtures that need no
+real agent installed.
+
+### Multiple instances and custom data directories
+
+Agents installed in several versions, or launched with a custom data-directory
+variable, may write to different stores. When a store exists but contains no
+session for a task that clearly ran, report that as a fact, widen discovery to
+configured alternate roots, and fall back to artifact reconstruction. Do not
+conclude that the task never ran.
+
+### Cross-platform notes
+
+Resolve roots through `Path.home()`, environment variables and platform
+convention directories; keep platform-specific path construction in one place.
+Epoch times in SQLite stores are milliseconds; artifact timestamps use the
+platform's normal seconds-based mtime and must be compared only after
+normalizing units.
