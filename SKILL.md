@@ -1,6 +1,6 @@
 ---
 name: agent-task-takeover
-version: 1.1.0
+version: 1.2.0
 license: MIT
 description: 接管、理解或交接另一个 AI 编码 agent 的任务/对话（跨 agent 全局可用，CLI 与 Electron 桌面 agent 均可，不依赖任何终端复用器）。Use whenever the user asks to take over, resume, review, read, or summarize another agent's conversation or task — e.g. "zcode接管opencode对话", "接管 AP Research", "take over the codex session", "opencode接管workbuddy任务", "hand off this task to another agent", "看看另一个 agent 做了什么" — and also when the user asks to prepare the current task for handoff to a different agent. Covers locating foreign session stores (opencode SQLite, ZCode/Codex/Claude/Gemini CLI transcripts, Cursor/Trae/VS Code-family state.vscdb and chatSessions), safely reading and redacting transcripts, reconstructing task state from artifacts when no usable transcript exists, verifying it on disk, and writing takeover handoffs.
 ---
